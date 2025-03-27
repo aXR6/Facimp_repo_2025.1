@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# Verifica se o script está sendo executado com privilégios de superusuário
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Este script deve ser executado com privilégios de superusuário (root)."
+    exit 1
+fi
+
+# Lista as interfaces de rede disponíveis
+echo "Interfaces de rede disponíveis:"
+interfaces=$(ip -o link show | awk -F': ' '{print $2}')
+select INTERFACE in $interfaces; do
+    if [ -n "$INTERFACE" ]; then
+        break
+    else
+        echo "Seleção inválida. Por favor, escolha uma opção válida."
+    fi
+done
+
+# Solicita ao usuário o tempo de captura em segundos
+read -p "Digite o tempo de captura em segundos (ou pressione Enter para captura contínua): " CAPTURE_TIME
+
+# Diretório para armazenar os logs
+LOG_DIR="/var/log/tcpdump_monitor"
+mkdir -p "$LOG_DIR"
+
+# Arquivo de log para armazenar os pacotes capturados
+LOG_FILE="$LOG_DIR/captura_$(date +'%Y%m%d_%H%M%S').log"
+
+# Filtros para identificar possíveis pacotes contendo credenciais
+FILTERS="port http or port ftp or port smtp or port imap or port pop3 or port telnet"
+
+# Expressões regulares para identificar padrões comuns de credenciais
+PATTERNS='pass=|pwd=|login=|user=|username=|password=|pass:|user:|login:'
+
+# Função para exibir cabeçalho da tabela
+print_header() {
+    printf "| %-19s | %-15s | %-15s | %-50s |\n" "Timestamp" "IP Origem" "IP Destino" "Dados Sensíveis"
+    printf "|%-21s|%-17s|%-17s|%-52s|\n" "$(printf -- '-%.0s' {1..21})" "$(printf -- '-%.0s' {1..17})" "$(printf -- '-%.0s' {1..17})" "$(printf -- '-%.0s' {1..52})"
+}
+
+# Função para exibir linha da tabela
+print_line() {
+    printf "| %-19s | %-15s | %-15s | %-50s |\n" "$1" "$2" "$3" "$4"
+}
+
+# Exibe cabeçalho da tabela
+print_header
+
+# Comando tcpdump com as opções aprimoradas
+TCPDUMP_CMD="tcpdump -i \"$INTERFACE\" -l -A -s 0 -X -p -n $FILTERS"
+
+# Inicia o tcpdump para capturar pacotes que correspondam aos filtros especificados
+if [ -n "$CAPTURE_TIME" ]; then
+    timeout "$CAPTURE_TIME" bash -c "$TCPDUMP_CMD" 2>/dev/null | \
+    grep --line-buffered -E -i "$PATTERNS" | \
+    while IFS= read -r line; do
+        TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
+        SRC_IP=$(echo "$line" | grep -oP '(?<=IP )[\d\.]+(?= >)')
+        DST_IP=$(echo "$line" | grep -oP '(?<= > )[\d\.]+(?=:)')
+        DATA=$(echo "$line" | grep -oP "$PATTERNS" | head -n 1)
+        print_line "$TIMESTAMP" "$SRC_IP" "$DST_IP" "$DATA"
+        print_line "$TIMESTAMP" "$SRC_IP" "$DST_IP" "$DATA" >> "$LOG_FILE"
+    done
+else
+    bash -c "$TCPDUMP_CMD" 2>/dev/null | \
+    grep --line-buffered -E -i "$PATTERNS" | \
+    while IFS= read -r line; do
+        TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
+        SRC_IP=$(echo "$line" | grep -oP '(?<=IP )[\d\.]+(?= >)')
+        DST_IP=$(echo "$line" | grep -oP '(?<= > )[\d\.]+(?=:)')
+        DATA=$(echo "$line" | grep -oP "$PATTERNS" | head -n 1)
+        print_line "$TIMESTAMP" "$SRC_IP" "$DST_IP" "$DATA"
+        print_line "$TIMESTAMP" "$SRC_IP" "$DST_IP" "$DATA" >> "$LOG_FILE"
+    done
+fi
