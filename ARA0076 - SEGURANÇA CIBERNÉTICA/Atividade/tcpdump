@@ -26,6 +26,7 @@ mkdir -p "$LOG_DIR"
 
 # Arquivo de log para armazenar os pacotes capturados
 LOG_FILE="$LOG_DIR/captura_$(date +'%Y%m%d_%H%M%S').log"
+PCAP_FILE="$LOG_DIR/captura_$(date +'%Y%m%d_%H%M%S').pcap"
 
 # Filtros para identificar possíveis pacotes contendo credenciais
 FILTERS="port http or port ftp or port smtp or port imap or port pop3 or port telnet"
@@ -48,7 +49,7 @@ print_line() {
 print_header
 
 # Comando tcpdump com as opções aprimoradas
-TCPDUMP_CMD="tcpdump -i \"$INTERFACE\" -l -A -s 0 -X -p -n $FILTERS"
+TCPDUMP_CMD="tcpdump -i \"$INTERFACE\" -l -A -s 0 -XX -B 4096 -p -nn -tttt -vvv $FILTERS -w \"$PCAP_FILE\""
 
 # Inicia o tcpdump para capturar pacotes que correspondam aos filtros especificados
 if [ -n "$CAPTURE_TIME" ]; then

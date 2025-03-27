@@ -1,12 +1,42 @@
 #!/bin/bash
 
-# Verifica se o script está sendo executado com privilégios de superusuário
+# Verifica se o script está sendo executado como root
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Este script deve ser executado com privilégios de superusuário (root)."
+    echo "Este script deve ser executado como root."
     exit 1
 fi
 
-# Função para exibir o menu principal
+# Lista as interfaces disponíveis
+interfaces=$(ip -o link show | awk -F': ' '{print $2}')
+echo "Interfaces de rede disponíveis:"
+select INTERFACE in $interfaces; do
+    if [ -n "$INTERFACE" ]; then
+        break
+    else
+        echo "Seleção inválida. Tente novamente."
+    fi
+done
+
+# Tempo de captura
+read -p "Digite o tempo de captura em segundos (pressione Enter para contínuo): " CAPTURE_TIME
+
+# Diretório e log
+LOG_DIR="/var/log/tcpdump_monitor"
+mkdir -p "$LOG_DIR"
+
+# Cabeçalho
+print_header() {
+    echo "-----------------------------------------------------------------------------------------------------------"
+    printf "| %-19s | %-15s | %-6s | %-20s | %-50s |\n" "Timestamp" "IP Origem" "Método" "Host" "URL/Credenciais"
+    echo "-----------------------------------------------------------------------------------------------------------"
+}
+
+# Linha da tabela
+print_line() {
+    printf "| %-19s | %-15s | %-6s | %-20s | %-50s |\n" "$1" "$2" "$3" "$4" "$5"
+}
+
+# Menu
 menu_principal() {
     clear
     echo "========================================="
@@ -14,51 +44,31 @@ menu_principal() {
     echo "========================================="
     echo "1. Capturar requisições HTTP GET e POST"
     echo "2. Extrair URLs de requisições HTTP"
-    echo "3. Capturar credenciais em requisições HTTP POST"
+    echo "3. Capturar credenciais em requisições POST"
     echo "4. Sair"
     echo "========================================="
     read -p "Escolha uma opção: " opcao
 }
 
-# Lista as interfaces de rede disponíveis
-interfaces=$(ip -o link show | awk -F': ' '{print $2}')
-echo "Interfaces de rede disponíveis:"
-select INTERFACE in $interfaces; do
-    if [ -n "$INTERFACE" ]; then
-        break
-    else
-        echo "Seleção inválida. Por favor, escolha uma opção válida."
-    fi
-done
-
-# Solicita ao usuário o tempo de captura em segundos
-read -p "Digite o tempo de captura em segundos (ou pressione Enter para captura contínua): " CAPTURE_TIME
-
-# Diretório para armazenar os logs
-LOG_DIR="/var/log/tcpdump_monitor"
-mkdir -p "$LOG_DIR"
-
-# Loop principal do menu
+# Loop principal
 while true; do
     menu_principal
+
+    TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+    LOG_FILE="$LOG_DIR/captura_${TIMESTAMP}.log"
+
     case $opcao in
         1)
-            # Captura de requisições HTTP GET e POST
-            echo "Iniciando captura de requisições HTTP GET e POST..."
-            FILTERS="tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x47455420 or tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x504f5354"
-            LOG_FILE="$LOG_DIR/http_get_post_$(date +'%Y%m%d_%H%M%S').log"
+            echo "Capturando HTTP GET e POST..."
+            FILTER="tcp port 80"
             ;;
         2)
-            # Extração de URLs de requisições HTTP
-            echo "Iniciando extração de URLs de requisições HTTP..."
-            FILTERS="port http"
-            LOG_FILE="$LOG_DIR/http_urls_$(date +'%Y%m%d_%H%M%S').log"
+            echo "Extraindo URLs..."
+            FILTER="tcp port 80"
             ;;
         3)
-            # Captura de credenciais em requisições HTTP POST
-            echo "Iniciando captura de credenciais em requisições HTTP POST..."
-            FILTERS="port http"
-            LOG_FILE="$LOG_DIR/http_post_credentials_$(date +'%Y%m%d_%H%M%S').log"
+            echo "Capturando possíveis credenciais..."
+            FILTER="tcp port 80"
             ;;
         4)
             echo "Saindo..."
@@ -70,16 +80,53 @@ while true; do
             ;;
     esac
 
-    # Comando tcpdump com as opções especificadas
-    TCPDUMP_CMD="tcpdump -i \"$INTERFACE\" -l -A -s 0 -X -p -n $FILTERS"
+    TCPDUMP_CMD="tcpdump -i $INTERFACE -s 0 -A -l -nn -tttt -B 4096 $FILTER"
 
-    # Inicia o tcpdump para capturar pacotes conforme a opção selecionada
+    print_header
+
     if [ -n "$CAPTURE_TIME" ]; then
-        timeout "$CAPTURE_TIME" bash -c "$TCPDUMP_CMD" 2>/dev/null | tee "$LOG_FILE"
+        timeout "$CAPTURE_TIME" $TCPDUMP_CMD 2>/dev/null | \
+        awk '
+        /GET \/|POST \// {
+            ts=strftime("%Y-%m-%d %H:%M:%S");
+            split($0, a, " ");
+            method=a[1]; url=a[2]; ip=$3;
+            host=""; creds="";
+        }
+        /Host:/ {
+            host=$2;
+        }
+        /pass=|user=|login=|senha=|pwd=|password=/ {
+            creds=$0;
+        }
+        /^$/ && url != "" {
+            printf("| %-19s | %-15s | %-6s | %-20s | %-50s |\n", ts, ip, method, host, (creds ? creds : url));
+            method=""; url=""; host=""; creds="";
+        }
+        ' | tee -a "$LOG_FILE"
     else
-        bash -c "$TCPDUMP_CMD" 2>/dev/null | tee "$LOG_FILE"
+        $TCPDUMP_CMD 2>/dev/null | \
+        awk '
+        /GET \/|POST \// {
+            ts=strftime("%Y-%m-%d %H:%M:%S");
+            split($0, a, " ");
+            method=a[1]; url=a[2]; ip=$3;
+            host=""; creds="";
+        }
+        /Host:/ {
+            host=$2;
+        }
+        /pass=|user=|login=|senha=|pwd=|password=/ {
+            creds=$0;
+        }
+        /^$/ && url != "" {
+            printf("| %-19s | %-15s | %-6s | %-20s | %-50s |\n", ts, ip, method, host, (creds ? creds : url));
+            method=""; url=""; host=""; creds="";
+        }
+        ' | tee -a "$LOG_FILE"
     fi
 
-    echo "Captura concluída. Os resultados foram salvos em $LOG_FILE"
-    read -p "Pressione Enter para voltar ao menu principal..."
+    echo
+    echo "Captura salva em: $LOG_FILE"
+    read -p "Pressione Enter para voltar ao menu..."
 done
