@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Diretórios
+CA_DIR="ca"
+SERVER_DIR="servidor"
+CLIENT_DIR="cliente"
+
+# Nomes dos arquivos
+CA_KEY="$CA_DIR/ca.key"
+CA_CERT="$CA_DIR/ca.crt"
+
+SERVER_KEY="$SERVER_DIR/server.key"
+SERVER_CSR="$SERVER_DIR/server.csr"
+SERVER_CERT="$SERVER_DIR/server.crt"
+SERVER_EXT="$SERVER_DIR/server_ext.cnf"
+
+CLIENT_KEY="$CLIENT_DIR/client.key"
+CLIENT_CSR="$CLIENT_DIR/client.csr"
+CLIENT_CERT="$CLIENT_DIR/client.crt"
+CLIENT_EXT="$CLIENT_DIR/client_ext.cnf"
+
+# Nome do host do servidor
+SERVER_CN="lenovolegion"
+
+# Verifica se o OpenSSL está instalado
+if ! command -v openssl &> /dev/null
+then
+    echo "OpenSSL não encontrado. Por favor, instale o OpenSSL para continuar."
+    exit 1
+fi
+
+# Cria os diretórios necessários
+mkdir -p $CA_DIR $SERVER_DIR $CLIENT_DIR
+
+echo "=== Gerando a CA ==="
+openssl genrsa -out $CA_KEY 4096
+openssl req -x509 -new -nodes -key $CA_KEY -sha256 -days 3650 -out $CA_CERT \
+    -subj "/C=BR/ST=Maranhao/L=Imperatriz/O=Facimp/OU=Seguranca/CN=Facimp-CA"
+
+echo "=== Gerando o certificado do Servidor ==="
+openssl genrsa -out $SERVER_KEY 2048
+openssl req -new -key $SERVER_KEY -out $SERVER_CSR \
+    -subj "/C=BR/ST=Maranhao/L=Imperatriz/O=Facimp/OU=Servidor/CN=$SERVER_CN"
+
+# Cria o arquivo de extensão para o servidor
+cat > $SERVER_EXT <<EOL
+subjectAltName = DNS:$SERVER_CN
+EOL
+
+openssl x509 -req -in $SERVER_CSR -CA $CA_CERT -CAkey $CA_KEY -CAcreateserial \
+    -out $SERVER_CERT -days 365 -sha256 -extfile $SERVER_EXT
+
+echo "=== Gerando o certificado do Cliente ==="
+openssl genrsa -out $CLIENT_KEY 2048
+openssl req -new -key $CLIENT_KEY -out $CLIENT_CSR \
+    -subj "/C=BR/ST=Maranhao/L=Imperatriz/O=Facimp/OU=Cliente/CN=Agente-Facimp"
+
+# Cria o arquivo de extensão para o cliente
+cat > $CLIENT_EXT <<EOL
+subjectAltName = DNS:Agente-Facimp
+EOL
+
+openssl x509 -req -in $CLIENT_CSR -CA $CA_CERT -CAkey $CA_KEY -CAcreateserial \
+    -out $CLIENT_CERT -days 365 -sha256 -extfile $CLIENT_EXT
+
+echo "=== Certificados gerados com sucesso ==="
