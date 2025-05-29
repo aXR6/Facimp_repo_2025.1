@@ -109,7 +109,7 @@ binario_para_texto() {
     done
     echo ""
 }
-
+ 
 # Loop principal
 while true; do
     menu_principal
